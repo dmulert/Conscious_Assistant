@@ -1,0 +1,76 @@
+For **Phase 2**, we are integrating the "Brain." In 2026, the tech landscape has shifted: **Gemma 4** (specifically the **E2B** and **E4B** models) is now natively multimodal.
+
+This means we can actually bypass the old "Whisper + LLM" combo. Instead, we can feed the audio chunks directly into **Gemma 4 E2B**, which can handle transcription and "thinking" (summarization/intent extraction) in a single pass. This is much more efficient for a phone's battery and processing power.
+
+### 1. The Phase 2 Architecture: Native Audio Inference
+Instead of just a volume meter, our "Consciousness" now has a local inference engine. We'll use **Transformers.js v3**, which natively supports **WebGPU** on mobile browsers.
+
+| Component | 2026 Technical Choice | Why? |
+| :--- | :--- | :--- |
+| **Model** | `google/gemma-4-e2b-it` | 2.3B parameters; fits in ~1.5GB VRAM. Native audio support. |
+| **Backend** | ONNX Runtime + WebGPU | Uses your phone's GPU for near-instant processing. |
+| **Strategy** | Streamed Buffering | We process 30-second "blobs" of audio as they finish. |
+
+### 2. The Inference Hook (`useGemmaInference.js`)
+This hook replaces the placeholder in your `useVAD` logic. It initializes the model on the first "Wake Up" and processes audio as it's captured.
+
+```javascript
+import { pipeline } from '@huggingface/transformers';
+
+export const useGemmaInference = () => {
+  const [model, setModel] = useState(null);
+
+  useEffect(() => {
+    const initModel = async () => {
+      // Logic: Load Gemma 4 Edge model to WebGPU
+      const pipe = await pipeline('voice-to-text', 'google/gemma-4-e2b-it', {
+        device: 'webgpu',
+        dtype: 'fp16' // For mobile efficiency
+      });
+      setModel(pipe);
+    };
+    initModel();
+  }, []);
+
+  const processAudio = async (audioBlob) => {
+    if (!model) return "Model loading...";
+    
+    // Gemma 4 natively understands audio as a modality
+    const result = await model(audioBlob, {
+      task: 'transcribe_and_summarize',
+      prompt: 'Identify key action items from this dialogue.'
+    });
+    
+    return result;
+  };
+
+  return { processAudio };
+};
+```
+
+### 3. Updated Logic: The "Loop of Consciousness"
+Now, when your `useVAD` hook detects that a person has *stopped* speaking, it triggers the inference:
+
+1.  **VAD Start:** User starts talking $\rightarrow$ Begin buffering raw audio.
+2.  **VAD End:** User stops talking for 3 seconds $\rightarrow$ Export buffer as `Blob`.
+3.  **Inference:** `processAudio(blob)` $\rightarrow$ Gemma 4 transcribes & summarizes.
+4.  **Action:** Display the summary on the dashboard and queue for Phase 3 (Drive Sync).
+
+### 4. Why this fits your "Utility" Value
+By using **Gemma 4 E2B**, you aren't just getting a transcript; you're getting a model that understands *context*. If you're in the workshop and say "I need to pick up some 2x4s," the model won't just write that down—it can flag it as a **Task** immediately because it's "thinking" while it transcribes.
+
+
+
+**Technical Caution for Prototype:** The first time you load the PWA, it will download about 1.5GB of model weights. We should use the **Origin Private File System (OPFS)** to cache this so it only happens once.
+
+**Ready to integrate the `processAudio` trigger into your dashboard so you can see your first local "thought" on the screen?**
+
+---
+
+### Implementation status (Phase 2 shipped in repo)
+
+- **Brain:** `useGemmaInference.js` uses Transformers.js `automatic-speech-recognition` (`Xenova/whisper-tiny.en`) and `summarization` (`Xenova/distilbart-cnn-6-6`), with WebGPU → WASM fallback. Model IDs live in `src/brain/brainModels.js` for a future swap to Gemma 4 E2B when supported.
+- **Loop:** `useVAD.js` records while speech is detected; after **3 seconds** of quiet it stops `MediaRecorder` and calls `processAudio(blob)`. Dashboard shows transcript + insight in `App.jsx`.
+- **Caching:** Transformers.js uses the browser Cache API by default (not OPFS yet); large first download still only hits once per origin after cache is warm.
+
+**Next:** Phase 3 — Drive sync / queue actions from the insight stream.

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { env, pipeline } from '@huggingface/transformers';
+import { decodeBlobToMono16k } from '../brain/decodeAudioBlob.js';
 import { ASR_MODEL, SUMMARY_MODEL } from '../brain/brainModels.js';
 
 env.useBrowserCache = true;
@@ -54,7 +55,13 @@ async function createSummarizerPipeline(progress_callback) {
  * Local “Brain”: ASR (Whisper) + summarization (DistilBART). Swap models in
  * `brainModels.js` when Gemma 4 E2B is available in Transformers.js.
  */
-export const useGemmaInference = (enabled) => {
+export const useGemmaInference = (enabled, options = {}) => {
+  const { onInsight } = options;
+  const onInsightRef = useRef(onInsight);
+  useEffect(() => {
+    onInsightRef.current = onInsight;
+  }, [onInsight]);
+
   const asrRef = useRef(null);
   const summarizerRef = useRef(null);
   const [brainStatus, setBrainStatus] = useState('idle');
@@ -141,7 +148,8 @@ export const useGemmaInference = (enabled) => {
     setBrainStatus('inferring');
     setError(null);
     try {
-      const asrOut = await asrRef.current(audioBlob);
+      const samples = await decodeBlobToMono16k(audioBlob);
+      const asrOut = await asrRef.current(samples);
       const transcript = (asrOut?.text ?? '').trim();
       setLastTranscript(transcript || '(no speech detected)');
 
@@ -160,6 +168,11 @@ export const useGemmaInference = (enabled) => {
         }
       }
       setLastInsight(insight);
+      onInsightRef.current?.({
+        transcript: transcript || '(no speech detected)',
+        insight,
+        createdAt: Date.now(),
+      });
       setBrainStatus('ready');
     } catch (e) {
       console.error(e);

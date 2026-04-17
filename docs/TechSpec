@@ -74,3 +74,13 @@ By using **Gemma 4 E2B**, you aren't just getting a transcript; you're getting a
 - **Caching:** Transformers.js uses the browser Cache API by default (not OPFS yet); large first download still only hits once per origin after cache is warm.
 
 **Next:** Phase 3 — Drive sync / queue actions from the insight stream.
+
+---
+
+### Implementation status (Phase 3 shipped in repo)
+
+- **Queue:** Each completed brain result (transcript + insight + timestamp) is appended via `onInsight` to a **local queue** persisted in `localStorage` (`src/sync/actionQueue.js`).
+- **Drive:** `src/sync/googleDrive.js` ensures a text file `MuleBot_Conscious_Log.txt` exists (id cached in `localStorage`), then **downloads + replaces** content with an extra JSON line per pending item (simple append). OAuth uses **Google Identity Services** `initTokenClient` with scope `https://www.googleapis.com/auth/drive.file`.
+- **UI:** `App.jsx` — Connect Google / Disconnect / Sync to Drive; shows last 8 queue rows and pending count.
+
+**Next:** Deeper Drive integration (incremental upload, conflict handling), or Phase 4 product features.

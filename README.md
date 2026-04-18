@@ -1,6 +1,17 @@
 # Conscious Assistant
 
-A React + Vite web app (“MuleBot: Conscious Assistant”) that keeps the screen awake while active, captures speech into audio blobs after silence, runs **Phase 2** local inference with [Transformers.js](https://huggingface.co/docs/transformers.js) (Whisper ASR + DistilBART summarization), and **Phase 3** queues each transcript/insight locally and can append JSON lines to a Google Drive file. Swap brain models in `src/brain/brainModels.js` when `google/gemma-4-e2b-it` is available in-browser.
+**MuleBot: Conscious Assistant** is a React + Vite PWA that listens after you wake it, runs speech-to-text and summarization in the browser, then lets you choose where to save results (copy, save file, or share to apps like Google Drive).
+
+## What it does
+
+- **Wake / stay awake** - Uses the [Screen Wake Lock API](https://developer.mozilla.org/en-US/docs/Web/API/Screen_Wake_Lock_API) so the screen stays on while the session is active.
+- **Voice capture** - Voice activity detection plus `MediaRecorder`; after about **three seconds** of silence, the last utterance is decoded and sent to the brain (`src/hooks/useVAD.js`).
+- **Local brain (Transformers.js)** - Whisper-style ASR + summarization via ONNX in the browser, with WebGPU when available and WASM fallback (`src/hooks/useGemmaInference.js`).
+- **Local queue + save actions** - Each result is queued locally and can be exported with **Copy all**, **Save as...**, or **Share...** (share sheet can target Google Drive, email, notes, etc.) using `src/hooks/useTranscriptActions.js`.
+
+## Stack
+
+- React 19, Vite 7, `@huggingface/transformers` 3.x
 
 ## Prerequisites
 
@@ -12,40 +23,42 @@ A React + Vite web app (“MuleBot: Conscious Assistant”) that keeps the scree
 npm install
 ```
 
+No Google Cloud setup is required.
+
 ## Scripts
 
-| Command        | Description              |
-| -------------- | ------------------------ |
-| `npm run dev`  | Start dev server (Vite)  |
+| Command | Description |
+| ------- | ----------- |
+| `npm run dev` | Start the Vite dev server (default `http://localhost:5173`) |
 | `npm run build` | Production build to `dist/` |
 | `npm run preview` | Serve the production build locally |
 
+## Using the app
+
+1. Run `npm run dev` and open the URL shown in the terminal.
+2. Click **WAKE UP**, grant microphone access, and wait for the brain models to finish loading (first run downloads weights; later runs use cache).
+3. Speak; pause for ~3 seconds to finalize a segment.
+4. Use **Copy all**, **Save as...**, or **Share...** to export transcripts.
+
 ## Project layout
 
-- `src/main.jsx` — app entry
-- `src/App.jsx` — main UI
-- `src/hooks/useVAD.js` — VAD + `MediaRecorder` (silence end → audio `Blob`)
-- `src/hooks/useGemmaInference.js` — loads pipelines on Wake Up; `processAudio(blob)` → transcript + summary
-- `src/hooks/useDriveSync.js` — Phase 3: local queue + Google Identity + Drive append
-- `src/sync/actionQueue.js` — persisted queue (`localStorage`)
-- `src/sync/googleDrive.js` — Drive REST: ensure log file, append JSONL
-- `src/brain/brainModels.js` — Hugging Face model IDs for the Brain
-
-### Google Drive sync (Phase 3)
-
-1. In [Google Cloud Console](https://console.cloud.google.com/), create an OAuth **Web client** and enable the **Google Drive API**.
-2. Under the client, set **Authorized JavaScript origins** to your dev origin (e.g. `http://localhost:5173`) and production origin when you deploy.
-3. Create a `.env` file in the project root with:
-
-   `VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com`
-
-4. Restart `npm run dev`. Use **Connect Google**, then **Sync to Drive** to append pending items to `MuleBot_Conscious_Log.txt` (scope: `drive.file`).
+| Path | Purpose |
+| ---- | ------- |
+| `src/main.jsx` | App entry |
+| `src/App.jsx` | UI: wake control, brain status, transcript queue, save actions |
+| `src/hooks/useVAD.js` | VAD + `MediaRecorder`, silence -> `Blob` callback |
+| `src/hooks/useGemmaInference.js` | Load ASR/summarizer on wake; `processAudio(blob)` |
+| `src/hooks/useTranscriptActions.js` | Local queue + copy/save/share export actions |
+| `src/brain/brainModels.js` | Hugging Face model IDs for ASR and summarization |
+| `src/brain/decodeAudioBlob.js` | Decode recorded blobs to mono 16 kHz samples |
+| `vite.config.js` | Vite + React; `optimizeDeps.exclude` for `@huggingface/transformers` |
+| `public/manifest.json` | PWA manifest |
 
 ## Notes
 
-- Wake Lock uses the [Screen Wake Lock API](https://developer.mozilla.org/en-US/docs/Web/API/Screen_Wake_Lock_API); support varies by browser and may require a secure context (`https` or `localhost`).
-- First run downloads model weights (cached via the browser **Cache API** / Transformers.js defaults). Allow mic access after Wake Up.
-- WebGPU is used when available; the code falls back to WASM/quantized paths if not.
+- **Secure context** - Wake Lock, mic, and many APIs expect `https://` or `http://localhost`.
+- **First-load size** - ML weights are large; first run can take noticeable time and bandwidth.
+- **Share behavior** - `Share...` depends on browser/device support. On supported devices, you can pick Google Drive directly from the share sheet.
 
 ## License
 

@@ -1,22 +1,12 @@
 import React, { useCallback, useState } from 'react';
-import { useDriveSync } from './hooks/useDriveSync';
 import { useGemmaInference } from './hooks/useGemmaInference';
+import { useTranscriptActions } from './hooks/useTranscriptActions';
 import { useVAD } from './hooks/useVAD';
 
 const App = () => {
   const [isAwake, setIsAwake] = useState(false);
-  const {
-    clientIdConfigured,
-    accessToken,
-    queue,
-    pendingCount,
-    syncing,
-    driveError,
-    enqueue,
-    connectGoogle,
-    disconnectGoogle,
-    syncNow,
-  } = useDriveSync();
+  const { queue, queueCount, actionError, actionMessage, enqueue, clearQueue, copyAll, saveAll, shareAll } =
+    useTranscriptActions();
 
   const handleInsight = useCallback(
     (payload) => {
@@ -25,15 +15,8 @@ const App = () => {
     [enqueue]
   );
 
-  const {
-    processAudio,
-    brainStatus,
-    loadProgress,
-    lastTranscript,
-    lastInsight,
-    error,
-    summarizerReady,
-  } = useGemmaInference(isAwake, { onInsight: handleInsight });
+  const { processAudio, brainStatus, loadProgress, lastTranscript, lastInsight, error, summarizerReady } =
+    useGemmaInference(isAwake, { onInsight: handleInsight });
   const [wakeLock, setWakeLock] = useState(null);
 
   const onSegment = useCallback(
@@ -65,13 +48,13 @@ const App = () => {
     brainStatus === 'idle'
       ? 'Sleeping'
       : brainStatus === 'loading'
-        ? `Loading models… ${loadProgress}%`
+        ? `Loading models... ${loadProgress}%`
         : brainStatus === 'ready'
           ? summarizerReady
             ? 'Ready (ASR + summary)'
-            : 'Ready (ASR; summary loading…)'
+            : 'Ready (ASR; summary loading...)'
           : brainStatus === 'inferring'
-            ? 'Thinking…'
+            ? 'Thinking...'
             : brainStatus === 'error'
               ? 'Error'
               : brainStatus;
@@ -92,7 +75,7 @@ const App = () => {
 
       <div style={styles.statusBox}>
         <p>
-          Mic: <strong>{isSpeaking ? 'LISTENING…' : 'WAITING'}</strong>
+          Mic: <strong>{isSpeaking ? 'LISTENING...' : 'WAITING'}</strong>
         </p>
         <p>Brain: {brainLabel}</p>
         {error ? (
@@ -101,56 +84,43 @@ const App = () => {
           </p>
         ) : null}
         <p style={styles.sectionLabel}>Transcript</p>
-        <p style={styles.block}>{lastTranscript ?? '—'}</p>
+        <p style={styles.block}>{lastTranscript ?? '-'}</p>
         <p style={styles.sectionLabel}>Insight / summary</p>
-        <p style={styles.block}>{lastInsight ?? '—'}</p>
+        <p style={styles.block}>{lastInsight ?? '-'}</p>
 
-        <p style={styles.sectionLabel}>Phase 3 — Drive queue</p>
-        {!clientIdConfigured ? (
-          <p style={styles.hint}>
-            Add <code style={styles.code}>VITE_GOOGLE_CLIENT_ID</code> to <code style={styles.code}>.env</code> and
-            restart Vite to enable Google sync (OAuth Web client + Drive API).
-          </p>
-        ) : (
-          <div style={styles.driveRow}>
-            {!accessToken ? (
-              <button type="button" style={styles.secondaryBtn} onClick={connectGoogle}>
-                Connect Google
-              </button>
-            ) : (
-              <>
-                <span style={styles.connected}>Drive connected</span>
-                <button type="button" style={styles.secondaryBtn} onClick={disconnectGoogle}>
-                  Disconnect
-                </button>
-                <button
-                  type="button"
-                  style={styles.secondaryBtn}
-                  onClick={() => void syncNow()}
-                  disabled={syncing || pendingCount === 0}
-                >
-                  {syncing ? 'Syncing…' : `Sync to Drive (${pendingCount} pending)`}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-        {driveError ? (
+        <p style={styles.sectionLabel}>Phase 3 - Save options</p>
+        <p style={styles.queueMeta}>Queue: {queueCount} item(s)</p>
+        <div style={styles.actionsRow}>
+          <button type="button" style={styles.secondaryBtn} onClick={() => void copyAll()} disabled={!queueCount}>
+            Copy all
+          </button>
+          <button type="button" style={styles.secondaryBtn} onClick={() => void saveAll()} disabled={!queueCount}>
+            Save as...
+          </button>
+          <button type="button" style={styles.secondaryBtn} onClick={() => void shareAll()} disabled={!queueCount}>
+            Share... (Drive, etc)
+          </button>
+          <button type="button" style={styles.secondaryBtn} onClick={clearQueue} disabled={!queueCount}>
+            Clear queue
+          </button>
+        </div>
+        <p style={styles.hint}>
+          Tip: <strong>Share...</strong> opens your device share sheet, so you can choose Google Drive, email, notes,
+          and more without app OAuth.
+        </p>
+
+        {actionMessage ? <p style={styles.ok}>{actionMessage}</p> : null}
+        {actionError ? (
           <p style={styles.error}>
-            <strong>Drive:</strong> {driveError}
+            <strong>Save action:</strong> {actionError}
           </p>
         ) : null}
-        <p style={styles.queueMeta}>
-          Local queue: {queue.length} item(s) · {pendingCount} pending
-        </p>
+
         <ul style={styles.queueList}>
           {queue.slice(-8).map((item) => (
             <li key={item.id} style={styles.queueItem}>
-              <span style={item.status === 'synced' ? styles.synced : styles.pending}>
-                [{item.status}]
-              </span>{' '}
-              {new Date(item.createdAt).toLocaleString()} — {item.insight.slice(0, 120)}
-              {item.insight.length > 120 ? '…' : ''}
+              {new Date(item.createdAt).toLocaleString()} - {item.insight.slice(0, 120)}
+              {item.insight.length > 120 ? '...' : ''}
             </li>
           ))}
         </ul>
@@ -201,13 +171,12 @@ const styles = {
     wordBreak: 'break-word',
   },
   error: { color: '#c62828', marginTop: '8px' },
-  hint: { fontSize: '0.85rem', color: '#555', lineHeight: 1.5 },
-  code: { background: '#eee', padding: '0 4px' },
-  driveRow: {
+  ok: { color: '#2e7d32', marginTop: '8px' },
+  hint: { fontSize: '0.85rem', color: '#555', lineHeight: 1.5, marginTop: '8px' },
+  actionsRow: {
     display: 'flex',
     flexWrap: 'wrap',
     gap: '8px',
-    alignItems: 'center',
     marginTop: '8px',
   },
   secondaryBtn: {
@@ -219,8 +188,7 @@ const styles = {
     background: '#f5f5f5',
     borderRadius: '4px',
   },
-  connected: { fontSize: '0.85rem', color: '#2e7d32' },
-  queueMeta: { fontSize: '0.8rem', color: '#666', marginTop: '12px' },
+  queueMeta: { fontSize: '0.8rem', color: '#666', marginTop: '8px' },
   queueList: {
     margin: '8px 0 0',
     paddingLeft: '1.2rem',
@@ -229,8 +197,6 @@ const styles = {
     overflowY: 'auto',
   },
   queueItem: { marginBottom: '6px' },
-  synced: { color: '#2e7d32' },
-  pending: { color: '#ef6c00' },
 };
 
 export default App;
